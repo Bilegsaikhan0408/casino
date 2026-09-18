@@ -1,0 +1,234 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Cassino</title>
+<style>
+  :root {
+    --felt: #1f6b45; --felt-dark: #154d31; --ink: #1b1b1b; --red: #c62828;
+    --gold: #f2c14e; --card-w: 78px; --card-h: 110px;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; font-family: system-ui, sans-serif; background: var(--felt-dark); color: #fff; }
+  main { max-width: 980px; margin: 0 auto; padding: 16px; display: grid; gap: 14px;
+         grid-template-columns: 1fr 260px; }
+  header { grid-column: 1 / -1; display: flex; justify-content: space-between; align-items: center; }
+  h1 { margin: 0; font-size: 1.5rem; }
+  button { font: inherit; padding: 8px 16px; border-radius: 8px; border: 0; cursor: pointer;
+           background: var(--gold); color: #222; font-weight: 600; }
+  button:disabled { opacity: .4; cursor: not-allowed; }
+  button.secondary { background: #ffffff22; color: #fff; }
+  .felt { background: var(--felt); border-radius: 16px; padding: 16px; display: grid; gap: 14px;
+          box-shadow: inset 0 0 40px #0006; }
+  .zone-title { font-size: .8rem; letter-spacing: .08em; text-transform: uppercase; opacity: .8; margin-bottom: 6px;
+                display: flex; justify-content: space-between; }
+  .row { display: flex; flex-wrap: wrap; gap: 8px; min-height: var(--card-h); align-items: center; }
+  .card { width: var(--card-w); height: var(--card-h); background: #fff; color: var(--ink); border-radius: 8px;
+          position: relative; box-shadow: 0 2px 5px #0007; user-select: none; font-weight: 700;
+          border: 3px solid transparent; transition: transform .1s; }
+  .card.red { color: var(--red); }
+  .card .corner { position: absolute; top: 4px; left: 6px; line-height: 1; font-size: 1.1rem; text-align: center; }
+  .card .corner span { display: block; font-size: 1rem; }
+  .card .pip { position: absolute; inset: 0; display: grid; place-items: center; font-size: 2.4rem; }
+  .card.back { background: repeating-linear-gradient(45deg, #2a4fa0 0 6px, #1e3a7a 6px 12px); border-color: #fff; }
+  .clickable { cursor: pointer; }
+  .clickable:hover { transform: translateY(-4px); }
+  .selected { border-color: var(--gold); transform: translateY(-8px); }
+  .hint { outline: 3px dashed #ffffffaa; outline-offset: 2px; }
+  .empty { opacity: .6; font-style: italic; }
+  #log .fresh { outline: 2px solid #8ab4ff; }
+  .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+  #status { font-weight: 600; min-height: 1.4em; }
+  aside { background: #0004; border-radius: 16px; padding: 14px; display: grid; gap: 14px; align-content: start; }
+  .scoreboard { display: grid; grid-template-columns: 1fr auto auto; gap: 4px 12px; font-size: .95rem; }
+  .scoreboard .h { opacity: .7; font-size: .75rem; text-transform: uppercase; }
+  #log { max-height: 320px; overflow-y: auto; font-size: .9rem; display: grid; gap: 4px; }
+  #log div { padding: 4px 8px; border-radius: 6px; background: #ffffff10; }
+  #log .computer { border-left: 3px solid #8ab4ff; }
+  #log .you { border-left: 3px solid var(--gold); }
+  #log .sweep { background: #f2c14e33; }
+  #result { background: #000a; border-radius: 12px; padding: 12px; }
+  #result table { width: 100%; border-collapse: collapse; }
+  #result td, #result th { padding: 3px 6px; text-align: right; }
+  #result td:first-child, #result th:first-child { text-align: left; }
+  .rules { font-size: .8rem; opacity: .8; line-height: 1.4; }
+  @media (max-width: 760px) { main { grid-template-columns: 1fr; } :root { --card-w: 62px; --card-h: 88px; } }
+</style>
+</head>
+<body>
+<main>
+  <header>
+    <h1>Cassino</h1>
+    <button id="new" class="secondary">New deal</button>
+  </header>
+
+  <section class="felt">
+    <div>
+      <div class="zone-title"><span>Computer's hand</span><span id="talon"></span></div>
+      <div class="row" id="opp"></div>
+    </div>
+    <div>
+      <div class="zone-title"><span>Table</span></div>
+      <div class="row" id="table"></div>
+    </div>
+    <div>
+      <div class="zone-title"><span>Your hand</span></div>
+      <div class="row" id="hand"></div>
+    </div>
+    <div class="actions">
+      <button id="play" disabled>Play</button>
+      <button id="clear" class="secondary">Clear</button>
+      <span id="status"></span>
+    </div>
+  </section>
+
+  <aside>
+    <div class="scoreboard" id="score"></div>
+    <div id="result" hidden></div>
+    <div>
+      <div class="zone-title"><span>Log</span></div>
+      <div id="log"></div>
+    </div>
+    <div class="rules">
+      A=1 … K=13. Click card(s) in your hand, then the table cards they take
+      (a matching card, or cards that add up to it), and press Play.
+      Select just a hand card and press Play to place it. Clearing the table is a sweep.
+    </div>
+  </aside>
+</main>
+
+<script>
+const SUIT = { S: "♠", H: "♥", D: "♦", C: "♣" };
+let view = null;
+let selHand = new Set(), selTable = new Set();
+
+const $ = id => document.getElementById(id);
+const key = arr => [...arr].sort().join(",");
+
+function cardEl(card, { click, selected, hint } = {}) {
+  const el = document.createElement("div");
+  const rank = card.slice(0, -1), suit = card.slice(-1);
+  el.className = "card" + (suit === "H" || suit === "D" ? " red" : "");
+  el.innerHTML = `<div class="corner">${rank}<span>${SUIT[suit]}</span></div><div class="pip">${SUIT[suit]}</div>`;
+  el.title = card;
+  if (click) { el.classList.add("clickable"); el.onclick = click; }
+  if (selected) el.classList.add("selected");
+  if (hint) el.classList.add("hint");
+  return el;
+}
+
+function backEl() { const e = document.createElement("div"); e.className = "card back"; return e; }
+
+function toggle(set, card) {
+  set.has(card) ? set.delete(card) : set.add(card);
+  render();
+}
+
+function matchingMove() {
+  return view.legal.find(m => key(m.hand) === key(selHand) && key(m.table) === key(selTable));
+}
+
+function hintedTableCards() {
+  if (!selHand.size) return new Set();
+  const cards = new Set();
+  for (const m of view.legal)
+    if (m.table.length && key(m.hand) === key(selHand) && [...selTable].every(c => m.table.includes(c)))
+      m.table.forEach(c => cards.add(c));
+  return cards;
+}
+
+function render() {
+  const v = view;
+  // drop selections that no longer exist
+  selHand = new Set([...selHand].filter(c => v.hand.includes(c)));
+  selTable = new Set([...selTable].filter(c => v.table.includes(c)));
+
+  $("talon").textContent = `Stock: ${v.talon} cards`;
+  const opp = $("opp"); opp.innerHTML = "";
+  for (let i = 0; i < v.opponent_cards; i++) opp.append(backEl());
+  if (!v.opponent_cards) opp.innerHTML = '<span class="empty">no cards</span>';
+
+  const hints = v.your_turn ? hintedTableCards() : new Set();
+  const table = $("table"); table.innerHTML = "";
+  v.table.forEach(c => table.append(cardEl(c, {
+    click: v.your_turn ? () => toggle(selTable, c) : null,
+    selected: selTable.has(c), hint: hints.has(c) && !selTable.has(c) })));
+  if (!v.table.length) table.innerHTML = '<span class="empty">empty table</span>';
+
+  const hand = $("hand"); hand.innerHTML = "";
+  v.hand.forEach(c => hand.append(cardEl(c, {
+    click: v.your_turn ? () => toggle(selHand, c) : null, selected: selHand.has(c) })));
+  if (!v.hand.length) hand.innerHTML = '<span class="empty">no cards</span>';
+
+  const move = v.your_turn && matchingMove();
+  const play = $("play");
+  play.disabled = !move;
+  play.textContent = !selHand.size ? "Play"
+    : selTable.size ? "Take" : "Place";
+
+  let status;
+  if (v.over) status = "Deal over.";
+  else if (!v.your_turn) status = "Computer is thinking…";
+  else if (v.double) status = "The computer swept — you play twice in a row.";
+  else if (selHand.size && selTable.size && !move) status = "Those cards don't add up.";
+  else status = "Your move.";
+  $("status").textContent = status;
+
+  $("score").innerHTML = `
+    <span class="h"></span><span class="h">You</span><span class="h">Computer</span>
+    <span>Cards taken</span><span>${v.you.pile}</span><span>${v.computer.pile}</span>
+    <span>Sweeps</span><span>${v.you.sweeps}</span><span>${v.computer.sweeps}</span>`;
+
+  const log = $("log"); log.innerHTML = "";
+  const lastYou = v.log.map(e => e.who).lastIndexOf("you");
+  v.log.forEach((e, i) => {
+    const d = document.createElement("div");
+    if (e.who === "computer" && i > lastYou && v.your_turn) d.classList.add("fresh");
+    d.textContent = e.text;
+    if (e.who) d.classList.add(e.who);
+    if (e.sweep) d.classList.add("sweep");
+    log.append(d);
+  });
+  log.scrollTop = log.scrollHeight;
+
+  renderResult();
+}
+
+function renderResult() {
+  const box = $("result");
+  if (!view.over) { box.hidden = true; return; }
+  const r = view.result, row = (label, k, fmt = x => x) =>
+    `<tr><td>${label}</td><td>${fmt(r.you[k])}</td><td>${fmt(r.computer[k])}</td></tr>`;
+  const title = r.winner === "you" ? "You win!" : r.winner === "computer" ? "The computer wins." : "A tie.";
+  box.hidden = false;
+  box.innerHTML = `<strong>${title}</strong><table>
+    <tr><th></th><th>You</th><th>Comp.</th></tr>
+    <tr><td>Cards (${r.you.pile}/${r.computer.pile})</td><td>${r.you.cards}</td><td>${r.computer.cards}</td></tr>
+    <tr><td>Spades (${r.you.spade_cards}/${r.computer.spade_cards})</td><td>${r.you.spades}</td><td>${r.computer.spades}</td></tr>
+    ${row("Aces", "aces")}${row("10♦", "ten_of_diamonds")}${row("2♠", "two_of_spades")}${row("Sweeps", "sweeps")}
+    <tr><th>Total</th><th>${r.you.total}</th><th>${r.computer.total}</th></tr></table>`;
+}
+
+async function api(path, body) {
+  const res = await fetch(path, body === undefined ? {} : {
+    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+  return res.json();
+}
+
+async function submit() {
+  const move = matchingMove();
+  if (!move) return;
+  const next = await api("/api/move", { hand: [...selHand], table: [...selTable] });
+  selHand.clear(); selTable.clear();
+  view = next; render();
+}
+
+$("play").onclick = submit;
+$("clear").onclick = () => { selHand.clear(); selTable.clear(); render(); };
+$("new").onclick = async () => { selHand.clear(); selTable.clear(); view = await api("/api/new", {}); render(); };
+
+api("/api/state").then(v => { view = v; render(); });
+</script>
+</body>
+</html>
