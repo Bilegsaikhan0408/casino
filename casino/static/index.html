@@ -36,6 +36,11 @@
   .clickable:hover { transform: translateY(-4px); }
   .selected { border-color: var(--gold); transform: translateY(-8px); }
   .hint { outline: 3px dashed #ffffffaa; outline-offset: 2px; }
+  dialog { max-width: 520px; width: calc(100% - 32px); border: 0; border-radius: 14px; padding: 20px 24px;
+           background: #fff; color: var(--ink); line-height: 1.45; }
+  dialog::backdrop { background: #000a; }
+  dialog h2 { margin-top: 0; } dialog h3 { margin: 14px 0 4px; font-size: 1rem; }
+  dialog p, dialog ol, dialog ul { margin: 4px 0; } dialog form { margin-top: 16px; text-align: right; }
   .empty { opacity: .6; font-style: italic; }
   #log .fresh { outline: 2px solid #8ab4ff; }
   .actions { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
@@ -60,8 +65,41 @@
 <main>
   <header>
     <h1>Cassino</h1>
-    <button id="new" class="secondary">New deal</button>
+    <div class="actions">
+      <button id="howto" class="secondary">How to play</button>
+      <button id="new" class="secondary">New deal</button>
+    </div>
   </header>
+
+  <dialog id="help">
+    <h2>How to play</h2>
+    <p><strong>Goal:</strong> collect cards from the table to win points. You play one deal against the computer.</p>
+    <h3>Cards</h3>
+    <p>Ace = 1, 2–10 are their number, Jack = 11, Queen = 12, King = 13.
+       Each player holds 3 cards; 4 lie on the table. New cards are dealt when both hands are empty (7 rounds).</p>
+    <h3>Your turn: do one of these</h3>
+    <ol>
+      <li><strong>Take:</strong> click a card in your hand, then the table cards it takes, then press <em>Take</em>.
+        It takes a card of the same value (5 takes a 5), or cards that add up to it
+        (9 takes 4+5), or several groups at once (7 takes a 7 and 3+4).
+        Dashed outlines show what your selected card can take.</li>
+      <li><strong>Place:</strong> click one hand card and press <em>Place</em> to put it on the table.</li>
+    </ol>
+    <p>You may also select two hand cards: their sum counts as one value (5+A takes 4+2).</p>
+    <h3>Sweep</h3>
+    <p>Taking every card on the table is a sweep: 1 point, and the other player must then play twice in a row.</p>
+    <h3>Points at the end</h3>
+    <ul>
+      <li>3 — 27 or more cards</li>
+      <li>2 — 7 or more spades</li>
+      <li>1 each — aces</li>
+      <li>2 — 10♦</li>
+      <li>1 — 2♠</li>
+      <li>1 each — sweeps</li>
+    </ul>
+    <p>Whoever took cards last also gets what is left on the table when the deal ends.</p>
+    <form method="dialog"><button>Got it</button></form>
+  </dialog>
 
   <section class="felt">
     <div>
@@ -223,6 +261,11 @@ async function submit() {
   selHand.clear(); selTable.clear();
   view = next; render();
 }
+
+$("howto").onclick = () => $("help").showModal();
+try {
+  if (!localStorage.getItem("seenHelp")) { localStorage.setItem("seenHelp", "1"); $("help").showModal(); }
+} catch (e) {}
 
 $("play").onclick = submit;
 $("clear").onclick = () => { selHand.clear(); selTable.clear(); render(); };
